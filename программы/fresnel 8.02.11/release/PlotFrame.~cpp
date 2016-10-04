@@ -1,0 +1,716 @@
+//---------------------------------------------------------------------------
+
+#include <vcl.h>
+#pragma hdrstop
+
+#include "PlotFrame.h"
+
+#include "MathControl.h"  // to get plot's data
+#include "Program.h"      // call saveAs-fucntions
+#include <assert>
+
+//---------------------------------------------------------------------------
+#pragma package(smart_init)
+#pragma link "CSPIN"
+#pragma resource "*.dfm"
+Tplot *plot;
+//---------------------------------------------------------------------------
+__fastcall Tplot::Tplot(TComponent* Owner)
+    : TFrame(Owner)
+{
+// Set data to 0.
+
+    rpAmp = NULL;
+    rpPhase = NULL;
+      
+}
+      
+__fastcall Tplot::~Tplot()
+{
+// Deallocate memory.
+
+    RemoveAllInputAndRP ();
+    RemoveAllExternal ();
+}
+//---------------------------------------------------------------------------
+
+
+void Tplot::AddAllInputAndRP()
+{
+// Draw all input and RP plots.
+
+    // set math control's settings as in GUI
+    math->SetPlotPhaseStraighten(phaseStraight->Checked);
+    math->SetPlotNormalizeRP(normRP->Checked);
+    math->SetPlotMinAmp(minRP->Value);
+
+    // clear all input/RP plots
+    RemoveAllInputAndRP ();
+
+    // add AMP input/RP plots + list entries
+    PlotAmpInputAndRP ();
+
+    // add PHASE input/RP plots + list entries
+    PlotPhaseInputAndRP ();
+
+    // set the focus to ampList 
+    radioAmp->Checked = false;
+    radioAmp->Checked = true;   // make sure it changed the focus
+    FocusAmp();
+    UpdateCBoxColor();
+}
+//---------------------------------------------------------------------------
+
+void Tplot::RemoveAllInputAndRP()
+{
+// Remove input/RP plots and list entries
+
+    // amount of input plots
+    int lengthAmp = inputAmp.size();
+    int length = inputPhase.size();
+    assert (length == lengthAmp);         // lengths must be equal
+
+    // remove input plots, clear vectors
+    for (int i=0; i<length; i++)
+    {
+        delete inputAmp[i];
+        delete inputPhase[i];
+    }
+    inputAmp.clear();
+    inputPhase.clear();
+
+    // remove RP plots, NULLify pointers
+    if (rpAmp != NULL)
+    {
+        delete rpAmp;
+        rpAmp = NULL;
+    }
+    if (rpPhase != NULL)
+    {
+        delete rpPhase;
+        rpPhase = NULL;
+    }
+    
+    // clear lists
+    listAmp->Clear();
+    listPhase->Clear();
+
+    // set focus to Ext
+    FocusExt();
+    UpdateCBoxColor();
+}
+//---------------------------------------------------------------------------
+
+
+
+void Tplot::AddExternal(int dataID, String fileName)
+{
+// Add one external plot (and list entry)
+
+    // create new LineSeries and push its ptr to ptr-vector
+    TLineSeries* series = new TLineSeries (chart);
+    series->ParentChart = chart;
+    series->LinePen->Width = lineWidth->Value;
+    extData.push_back(series);
+
+    // fill in the data
+    int length = math->GetPlotExternalLength(dataID);
+    for (int i=0; i<length; i++)
+    {
+        double x = math->GetPlotExternalData(phi, dataID, i);
+        double y = math->GetPlotExternalData(value, dataID, i);
+        series->AddXY(x,y);
+    }
+//    String title = "график " + IntToStr(dataID);
+    String title = IntToStr(dataID) + ": " + ExtractFileName(fileName);
+    series->Title = title;
+
+    // push dataID to int-vector
+    extIDs.push_back (dataID);
+
+    // create a new entry in the list
+    listExt->AddItem(title, series);
+
+    // set checked
+    int index = listExt->Count - 1;
+    listExt->Checked[index] = true;
+
+    // set focus
+    listExt->ItemIndex = index;
+    FocusExt();
+    UpdateCBoxColor();
+}
+//---------------------------------------------------------------------------
+
+void Tplot::RemoveExternal(int index)
+{
+// Remove one external plot (and list entry)
+// NO check for 'index' validity is made!!!
+
+    // remove plot and erase vector entry
+    delete extData[index];
+    extData.erase(extData.begin()+index);
+
+    // remove int-vector entry
+    extIDs.erase(extIDs.begin()+index);
+
+    // remove the list entry
+    listExt->Items->Delete(index);
+
+    // set focus
+    if (listExt->Count > 0)
+    {
+        if (index==0)
+            listExt->ItemIndex = 0;
+        else
+            listExt->ItemIndex = index-1;
+    }
+    FocusExt();
+    UpdateCBoxColor();
+}
+//---------------------------------------------------------------------------
+
+
+
+void Tplot::RemoveAllExternal ()
+{
+// Remove external plots and list entries
+
+    // clear math-data
+    math->RemoveAllExternalData();
+
+    // remove plots, clear vector
+    int length = extData.size();
+    for (int i=0; i<length; i++)
+        delete extData[i];
+
+    extData.clear();
+
+    // clear int-vector
+    extIDs.clear();
+
+    // clear the list
+    listExt->Clear();
+
+    // set focus  (no focus)
+    FocusExt();
+    UpdateCBoxColor();
+}
+
+//---------------------------------------------------------------------------
+
+void Tplot::PlotAmpInputAndRP ()
+{
+// Add AMP input/RP plots + list entries - for use in AddAllInputAndRP
+// The pointers must be clear (deleted).
+
+    // RP data
+    // create RP LineSeries
+    TLineSeries* series = new TLineSeries (chart);
+    series->Active = radioAmp->Checked;
+    series->ParentChart = chart;
+    series->LinePen->Width = lineWidth->Value;
+    // save  ptr
+    rpAmp =  series;
+    // fill in the data
+    int length = math->GetPlotRPLength(amp);
+    for (int i=0; i<length; i++)
+    {
+        double x = math->GetPlotRPData(amp, phi, i);
+        double y = math->GetPlotRPData(amp, value, i);
+        series->AddXY(x,y);
+    }
+    String title = "восстановление";
+    series->Title = title;
+    // create list-entry
+    listAmp->AddItem(title, series);
+    listAmp->Checked[0] = true;
+
+
+
+    // Input data
+    int count = math->GetPlotInputCount();
+    int halfCount = (count-1)/2;
+
+    for (int dataIndex=0; dataIndex<count; dataIndex++)
+    {
+        // create new LineSeries and push its ptr to ptr-vector
+        TLineSeries* series = new TLineSeries (chart);
+        series->Active = false;
+        series->ParentChart = chart;
+        series->LinePen->Width = lineWidth->Value;
+        inputAmp.push_back(series);
+
+        // fill in the data
+        int length = math->GetPlotInputLength(amp, dataIndex);
+        for (int i=0; i<length; i++)
+        {
+            double x = math->GetPlotInputData(amp, phi, dataIndex, i);
+            double y = math->GetPlotInputData(amp, value, dataIndex, i);
+            series->AddXY(x,y);
+        }
+        String title = "сечение " + IntToStr(dataIndex-halfCount);
+        series->Title = title;
+    
+        // create a new entry in the list
+        listAmp->AddItem(title, series);
+
+        int index = listAmp->Count - 1;
+        listAmp->Checked[index] = false;
+    }
+}
+//---------------------------------------------------------------------------
+
+void Tplot::PlotPhaseInputAndRP ()
+{
+// Add PHASE input/RP plots + list entries - for use in AddAllInputAndRP
+// The pointers must be clear (deleted).
+
+    // RP data
+    // create RP LineSeries
+    TLineSeries* series = new TLineSeries (chart);
+    series->Active = radioPhase->Checked;
+    series->ParentChart = chart;
+    series->LinePen->Width = lineWidth->Value;
+    // save  ptr
+    rpPhase =  series;
+    // fill in the data
+    int length = math->GetPlotRPLength(phase);
+    for (int i=0; i<length; i++)
+    {
+        double x = math->GetPlotRPData(phase, phi, i);
+        double y = math->GetPlotRPData(phase, value, i);
+        series->AddXY(x,y);
+    }
+    String title = "восстановление";
+    series->Title = title;
+    // create list-entry
+    listPhase->AddItem(title, series);
+    listPhase->Checked[0] = true;
+
+
+
+    // Input data
+    int count = math->GetPlotInputCount();
+    int halfCount = (count-1)/2;
+
+    for (int dataIndex=0; dataIndex<count; dataIndex++)
+    {
+        // create new LineSeries and push its ptr to ptr-vector
+        TLineSeries* series = new TLineSeries (chart);
+        series->Active = false;
+        series->ParentChart = chart;
+        series->LinePen->Width = lineWidth->Value;
+        inputPhase.push_back(series);
+
+        // fill in the data
+        int length = math->GetPlotInputLength(phase, dataIndex);
+        for (int i=0; i<length; i++)
+        {
+            double x = math->GetPlotInputData(phase, phi, dataIndex, i);
+            double y = math->GetPlotInputData(phase, value, dataIndex, i);
+            series->AddXY(x,y);
+        }
+        String title = "сечение " + IntToStr(dataIndex-halfCount);
+        series->Title = title;
+
+        // create a new entry in the list
+        listPhase->AddItem(title, series);
+
+        int index = listPhase->Count - 1;
+        listPhase->Checked[index] = false;
+    }
+
+}
+//---------------------------------------------------------------------------
+
+
+
+void Tplot::AddExternal_action()
+{
+// Add external data file.
+// For a button callback. Originally I wanted to implement it in 'Program' class.
+
+    // execute open dialog
+    if (!extDataDialog->Execute())
+        return;
+    String file = extDataDialog->FileName;
+
+    // add data to math-object
+    bool ok = false;
+    int id = math->AddExternalData(file, &ok);
+    if (!ok)
+        return;
+
+    // add plot
+    AddExternal(id, file);
+}
+//---------------------------------------------------------------------------
+
+void Tplot::RemoveExternal_action()
+{
+// Delete external data file.
+// For a button callback. Originally I wanted to implement it in 'Program' class.
+
+    // check, if the listExt is pointing to valid plot
+    int index = listExt->ItemIndex;
+    if (index<0)
+        return;         // nothing is selected
+
+    // clear data in math-object
+    int dataID = extIDs[index];
+    math->RemoveExternalData(dataID);
+
+    // remove plot and related plot-class data
+    RemoveExternal(index);
+}
+
+//------------------------ WIDGETS CALLBACKS  -------------------------------
+
+
+void __fastcall Tplot::listAmpClick(TObject *Sender)
+{
+    // set focus
+    FocusAmp();
+    UpdateCBoxColor();
+}
+//---------------------------------------------------------------------------
+
+void __fastcall Tplot::listExtClick(TObject *Sender)
+{
+    // set focus
+    FocusExt();
+    UpdateCBoxColor();
+
+}
+//---------------------------------------------------------------------------
+
+void __fastcall Tplot::listPhaseClick(TObject *Sender)
+{
+    // set focus
+    FocusPhase();
+    UpdateCBoxColor();
+
+}
+//---------------------------------------------------------------------------
+
+void __fastcall Tplot::colorBoxChange(TObject *Sender)
+{
+    // change color of the selected plot
+    UpdatePlotColor ();
+}
+//---------------------------------------------------------------------------
+
+
+void __fastcall Tplot::addExtButtonClick(TObject *Sender)
+{
+    AddExternal_action();
+}
+//---------------------------------------------------------------------------
+
+void __fastcall Tplot::removeExtButtonClick(TObject *Sender)
+{
+    RemoveExternal_action();
+}
+//---------------------------------------------------------------------------
+
+void __fastcall Tplot::listExtClickCheck(TObject *Sender)
+{
+// Make external plot (in)visible
+
+    int index = listExt->ItemIndex;
+    TLineSeries* series = extData[index];
+
+    series->Active = (listExt->Checked[index]);
+}
+//---------------------------------------------------------------------------
+
+void __fastcall Tplot::listAmpClickCheck(TObject *Sender)
+{
+// Make amplitude plot (in)visible
+
+    int index = listAmp->ItemIndex;
+    TLineSeries* series;
+
+    if (index==0)           // RP plot
+        series = rpAmp;
+    else                    // input plots
+        series = inputAmp[index-1];
+
+    series->Active = (listAmp->Checked[index]);
+
+}
+//---------------------------------------------------------------------------
+
+void __fastcall Tplot::listPhaseClickCheck(TObject *Sender)
+{
+// Make phase plot (in)visible
+
+    int index = listPhase->ItemIndex;
+    TLineSeries* series;
+
+    if (index==0)           // RP plot
+        series = rpPhase;
+    else                    // input plots
+        series = inputPhase[index-1];
+
+    series->Active = (listPhase->Checked[index]);
+
+
+}
+//---------------------------------------------------------------------------
+
+
+
+void __fastcall Tplot::radioClick(TObject *Sender)
+{
+// Switch between amplitude and phase plots.
+
+    bool ampOn = radioAmp->Checked;
+    bool phaseOn = radioPhase->Checked;
+
+    listAmp->Visible = ampOn;    // set lists' visibility
+    listPhase->Visible = phaseOn;
+
+                       // set plots' visibility
+    int countAmp = listAmp->Count;   // amp plots
+    if (countAmp>0)
+    {
+        rpAmp->Active = listAmp->Checked[0] && ampOn;     // RP plot
+        for (int i=1; i<countAmp; i++)            // input plots
+            inputAmp[i-1]->Active = listAmp->Checked[i] && ampOn;    // shift by 1!
+    }
+
+    int countPhase = listPhase->Count; // phase plots
+    if (countPhase>0)
+    {
+        rpPhase->Active = listPhase->Checked[0] && phaseOn;     // RP plot
+        for (int i=1; i<countPhase; i++)            // input plots
+            inputPhase[i-1]->Active = listPhase->Checked[i] && phaseOn;    // shift by 1!
+    }
+
+    // set focus
+    if (ampOn)
+    {
+        if (countAmp>0)
+            listAmp->ItemIndex = 0;
+        FocusAmp();
+    }
+    else
+    {
+        if (countPhase>0)
+            listPhase->ItemIndex = 0;
+        FocusPhase();
+    }
+    UpdateCBoxColor();
+}
+//---------------------------------------------------------------------------
+
+
+void __fastcall Tplot::PlotSettingsChange(TObject *Sender)
+{
+// Re-calculate plots and re-draw them.
+// A callback for any of the three settings widgets.
+
+    // set math control's settings as in GUI
+    math->SetPlotPhaseStraighten(phaseStraight->Checked);
+    math->SetPlotNormalizeRP(normRP->Checked);
+    math->SetPlotMinAmp(minRP->Value);
+
+    // RP amp re-draw
+    if (rpAmp != NULL)
+    {
+        rpAmp->Clear();                                 // clear old data
+        int length = math->GetPlotRPLength(amp);
+        for (int i=0; i<length; i++)                    // add new data
+        {
+            double x = math->GetPlotRPData(amp, phi, i);
+            double y = math->GetPlotRPData(amp, value, i);
+            rpAmp->AddXY(x,y);
+        }
+    }
+
+
+    // RP phase re-draw
+    if (rpPhase != NULL)
+    {
+        rpPhase->Clear();                                 // clear old data
+        int length = math->GetPlotRPLength(phase);
+        for (int i=0; i<length; i++)                      // add new data
+        {
+            double x = math->GetPlotRPData(phase, phi, i);
+            double y = math->GetPlotRPData(phase, value, i);
+            rpPhase->AddXY(x,y);
+        }
+    }
+
+    // input amp re-draw
+    int ampCount = inputAmp.size();
+    for (int dataIndex=0; dataIndex<ampCount; dataIndex++)
+    {
+        TLineSeries* series = inputAmp[dataIndex];
+        series->Clear();
+        int length = math->GetPlotInputLength(amp, dataIndex);
+        for (int i=0; i<length; i++)
+        {
+            double x = math->GetPlotInputData(amp, phi, dataIndex, i);
+            double y = math->GetPlotInputData(amp, value, dataIndex, i);
+            series->AddXY(x,y);
+        }
+    }
+
+    // input phase re-draw
+    int phaseCount = inputPhase.size();
+    for (int dataIndex=0; dataIndex<phaseCount; dataIndex++)
+    {
+        TLineSeries* series = inputPhase[dataIndex];
+        series->Clear();
+        int length = math->GetPlotInputLength(phase, dataIndex);
+        for (int i=0; i<length; i++)
+        {
+            double x = math->GetPlotInputData(phase, phi, dataIndex, i);
+            double y = math->GetPlotInputData(phase, value, dataIndex, i);
+            series->AddXY(x,y);
+        }
+    }
+
+}
+//---------------------------------------------------------------------------
+
+void __fastcall Tplot::lineWidthChange(TObject *Sender)
+{
+// Change widths of all lines
+
+    int width = lineWidth->Value;
+
+    if (rpAmp != NULL)
+        rpAmp->LinePen->Width = width;
+
+    if (rpPhase != NULL)
+        rpPhase->LinePen->Width = width;
+
+    // input amp re-draw
+    int ampCount = inputAmp.size();
+    for (int dataIndex=0; dataIndex<ampCount; dataIndex++)
+    {
+        TLineSeries* series = inputAmp[dataIndex];
+        series->LinePen->Width = width;
+    }
+
+    // input phase re-draw
+    int phaseCount = inputPhase.size();
+    for (int dataIndex=0; dataIndex<phaseCount; dataIndex++)
+    {
+        TLineSeries* series = inputPhase[dataIndex];
+        series->LinePen->Width = width;
+    }
+
+    // external plots re-draw
+    int extCount = extData.size();
+    for (int dataIndex=0; dataIndex<extCount; dataIndex++)
+    {
+        TLineSeries* series = extData[dataIndex];
+        series->LinePen->Width = width;
+    }
+
+}
+//---------------------------------------------------------------------------
+
+
+//-------------------- COLOR-RELATED PRIVATE ROUTINES -----------------------
+//
+// The colorBox displays and updates the color of the plot, focused at
+// in any of the lists. To to it we have to keep only one list with focus
+// and to keep track which of the plots is focused at the moment.
+
+void Tplot::UpdateCBoxColor()
+{
+// Update color in colorBox from the plot indicated by focus
+// in one of the lists.
+
+    TLineSeries* series = FindFocusedPlot();
+    if (series == NULL)
+        return;             // nothing selected
+
+    colorBox->Selected = series->SeriesColor;
+}
+//---------------------------------------------------------------------------
+
+void Tplot::UpdatePlotColor()
+{
+// Update color in colorBox from the plot indicated by focus
+// in one of the lists.
+
+    TLineSeries* series = FindFocusedPlot();
+    if (series == NULL)
+        return;             // nothing selected
+
+    series->SeriesColor = colorBox->Selected;
+}
+
+//---------------------------------------------------------------------------
+
+void Tplot::FocusExt()
+{
+// Clear focus in Amp and Phase lists.
+
+    listAmp->ItemIndex = -1;
+    listPhase->ItemIndex = -1;
+}
+//---------------------------------------------------------------------------
+
+void Tplot::FocusAmp()
+{
+// Clear focus in Ext and Phase lists.
+
+    listExt->ItemIndex = -1;
+    listPhase->ItemIndex = -1;
+}
+//---------------------------------------------------------------------------
+
+void Tplot::FocusPhase()
+{
+// Clear focus in Amp and Ext lists.
+
+    listAmp->ItemIndex = -1;
+    listExt->ItemIndex = -1;
+}
+//---------------------------------------------------------------------------
+
+TLineSeries* Tplot::FindFocusedPlot()
+{
+// Find the plot focused at in lists. If failed return NULL.
+// To use in UpdateColor-functions.
+
+    // iterate over Ext list
+    int extIndex = listExt->ItemIndex;
+    if (extIndex != -1)
+        return (TLineSeries*)listExt->Items->Objects[extIndex];
+
+    // iterate over Amp list
+    int ampIndex = listAmp->ItemIndex;
+    if ((ampIndex != -1) && (listAmp->Visible))
+        return (TLineSeries*)listAmp->Items->Objects[ampIndex];
+
+    // iterate over Phase list
+    int phaseIndex = listPhase->ItemIndex;
+    if ((phaseIndex != -1) && (listPhase->Visible))
+        return (TLineSeries*)listPhase->Items->Objects[phaseIndex];
+
+    // nothing selected
+    return NULL;
+}
+//---------------------------------------------------------------------------
+
+void __fastcall Tplot::saveAmpClick(TObject *Sender)
+{
+    program->SaveAmpAs();
+}
+//---------------------------------------------------------------------------
+
+void __fastcall Tplot::savePhaseClick(TObject *Sender)
+{
+    program->SavePhaseAs();
+}
+//---------------------------------------------------------------------------
+

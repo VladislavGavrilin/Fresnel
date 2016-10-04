@@ -1,0 +1,51 @@
+[ampGrid]
+count=5
+file0=a_Doncha_3.45GHz Az_01.bln
+file1=a_Doncha_3.45GHz Az_02.bln
+file2=a_Doncha_3.45GHz Az_03.bln
+file3=a_Doncha_3.45GHz Az_04.bln
+file4=a_Doncha_3.45GHz Az_05.bln
+[phaseGrid]
+count=5
+file0=p_Doncha_3.45GHz Az_01.bln
+file1=p_Doncha_3.45GHz Az_02.bln
+file2=p_Doncha_3.45GHz Az_03.bln
+file3=p_Doncha_3.45GHz Az_04.bln
+file4=p_Doncha_3.45GHz Az_05.bln
+[edits]
+calibrAmpEdit=
+calibrPhaseEdit=
+Edit2=3.45
+Edit3=5000
+Edit4=5000
+Edit5=75
+Edit6=0.9
+Edit7=0.9
+Edit8=0.1
+Edit9=0
+Edit10=3500
+Edit11=0
+Edit12=0
+Edit13=10
+Edit14=50
+EditFreq=3.45
+EditHVert=5000
+EditHHor=5000
+EditResultSector=50
+EditR=75
+EditStep=0,997
+EditNOfSec=5
+EditMeasSector=53,9
+EditStepMan=0.9
+EditNOfSecMan=5
+[labels]
+maxRP=-1,7
+shiftVert=-1400
+shiftHor=0
+[otherWidgets]
+stepRbPosition=byHand
+calibrRbPosition=bln
+[statusVars]
+rpOutOfDate=0
+preparationOutOfDate=1
+resultExists=1
